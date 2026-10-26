@@ -169,7 +169,7 @@ export function supportWallBody(context is Context, id is Id, definition is map)
     if (definition.mergeWithPart)
     {
         opBoolean(context, id + "merge", {
-                "tools" : qUnion(concatenate([definition.part], walls)),
+                "tools" : qUnion(concatenateArrays([[definition.part], walls])),
                 "operationType" : BooleanOperationType.UNION
             });
     }
@@ -410,7 +410,7 @@ function buildProfile(sampleH is array, sampleS is array, hStart, hTop, edgeAt i
         var h = sampleH[j];
         while (k < size(teeth) && teeth[k] - bw / 2 <= h)
         {
-            pts = concatenate(pts, toothPts(teeth[k]));
+            pts = concatenateArrays([pts, toothPts(teeth[k])]);
             k += 1;
         }
         if (k > 0 && h <= teeth[k - 1] + bw / 2)
