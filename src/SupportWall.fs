@@ -133,10 +133,10 @@ export function supportWallBody(context is Context, id is Id, definition is map)
         throw regenError("Couldn't read the print bed plane.", ["bedPlane"]);
     }
 
-    var box;
+    var bbox;
     try
     {
-        box = evBox3d(context, { "topology" : definition.part, "tight" : true });
+        bbox = evBox3d(context, { "topology" : definition.part, "tight" : true });
     }
     catch (e)
     {
@@ -145,7 +145,7 @@ export function supportWallBody(context is Context, id is Id, definition is map)
 
     // "Up" is the bed normal, pointed toward the part.
     var up = bed.normal;
-    var center = (box.minCorner + box.maxCorner) / 2;
+    var center = (bbox.minCorner + bbox.maxCorner) / 2;
     if (dot(center - bed.origin, up) < 0 * meter)
         up = -up;
 
@@ -155,7 +155,7 @@ export function supportWallBody(context is Context, id is Id, definition is map)
     for (var i = 0; i < size(planes); i += 1)
     {
         var wallId = id + ("wall" ~ i);
-        var res = buildOneWall(context, wallId, planes[i], up, bed.origin, box, faces, definition);
+        var res = buildOneWall(context, wallId, planes[i], up, bed.origin, bbox, faces, definition);
         setProperty(context, {
                 "entities" : res.body,
                 "propertyType" : PropertyType.NAME,
@@ -178,7 +178,7 @@ export function supportWallBody(context is Context, id is Id, definition is map)
 }
 
 function buildOneWall(context is Context, wallId is Id, planeQuery is Query, up is Vector, bedOrigin is Vector,
-    box is Box3d, faces is Query, definition is map) returns map
+    bbox is Box3d, faces is Query, definition is map) returns map
 {
     var sp;
     try
@@ -214,9 +214,9 @@ function buildOneWall(context is Context, wallId is Id, planeQuery is Query, up 
     var hMax = undefined;
     for (var c = 0; c < 8; c += 1)
     {
-        var corner = vector(c % 2 == 0 ? box.minCorner[0] : box.maxCorner[0],
-            floor(c / 2) % 2 == 0 ? box.minCorner[1] : box.maxCorner[1],
-            floor(c / 4) == 0 ? box.minCorner[2] : box.maxCorner[2]);
+        var corner = vector(c % 2 == 0 ? bbox.minCorner[0] : bbox.maxCorner[0],
+            floor(c / 2) % 2 == 0 ? bbox.minCorner[1] : bbox.maxCorner[1],
+            floor(c / 4) == 0 ? bbox.minCorner[2] : bbox.maxCorner[2]);
         var cs = dot(corner - O, d);
         var ch = dot(corner - bedOrigin, up);
         if (sMin == undefined || cs < sMin)
