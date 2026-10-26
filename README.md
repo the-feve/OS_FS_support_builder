@@ -68,5 +68,5 @@ first paste to confirm. See *Known unknowns* below.
   about gap × cos(lean)).
 
 ## Related docs
-- [docs/STL_to_STEP.md](docs/STL_to_STEP.md): getting STL files into Onshape cleanly. Drag-and-drop converter in `tools/mesh2step/`
+- [docs/STL_to_STEP.md](docs/STL_to_STEP.md): getting STL files into Onshape cleanly. Converter now lives in [the-feve/mesh2step](https://github.com/the-feve/mesh2step)
 - [docs/prior_art.md](docs/prior_art.md): what already exists
