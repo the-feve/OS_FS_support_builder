@@ -21,6 +21,18 @@ changelogs through 1.214, Apr 2026).
 - **Reconstructed**: real planes, cylinders and fillets are recognised (prismatic), or NURBS
   patches are fitted over organic shapes. No free one-command tool does this.
 
+## Cleanup inside Onshape (searched 2026-10-26)
+
+No community FeatureScript or app found that merges facets into clean faces after import.
+- **InStep** (Onshape App Store) converts watertight STL to B-rep, but struggles over ~30k polygons,
+  so decimate first. ([forum](https://forum.onshape.com/discussion/3864/importing-a-mesh-file-into-onshape))
+- **Boolean Plus** (MBartlett21) is a community feature for working *with* meshes, not converting them.
+  ([forum](https://forum.onshape.com/discussion/5617/how-to-turn-mesh-to-part-or-some-other-solution))
+- A FeatureScript merger isn't practical at this scale: evaluating a million faces one by one is
+  far too slow, and there's no "merge coplanar faces" op. Merge before import: FreeCAD's
+  `removeSplitter()` (in `tools/stl2step.py`) does exactly that, and decimating to roughly 10k
+  faces first keeps both conversion and Onshape fast.
+
 ## Recommended workflow
 
 | Part type | Tool | Notes |
