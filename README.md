@@ -40,6 +40,14 @@ and a part whose base sits above the bed.*
 If the part's base is above the bed (curved bottoms), the wall drops straight down from the
 lowest point of contact.
 
+## Supporting an STL part
+
+Onshape imports STL as a mesh, and the feature's *Part to support* box only accepts solids. Convert
+it first with [mesh2step](https://github.com/the-feve/mesh2step), then import the STEP. Both its
+faceted and smooth outputs are real solids. The feature traces the part's edge by ray-casting,
+so facets don't get in the way; smooth mode just gives a lighter, cleaner part. When printing,
+export the support walls and use your original STL for the part itself.
+
 ## Install (paste flow)
 
 1. In your Onshape document, create a Feature Studio.
