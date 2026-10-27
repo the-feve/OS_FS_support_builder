@@ -1,12 +1,13 @@
 # profile_check.py: Python port of the pure 2D profile math in src/SupportWall.fs
-# (filterTrace, toothCenters, toothedEdge, singleProfile, bridgeProfile). Keep the two in sync.
+# (filterTrace, toothCenters, contactEdge, singleProfile, bridgeProfile). Keep the two in sync.
 #
 # Run:  python tools/profile_check.py   (needs shapely + matplotlib)
 # Checks every profile is a valid, non-self-intersecting polygon and writes docs/profile_preview.png.
 import math, random
 
-D = dict(gap=1.0, overlap=0.1, toothBase=2.5, toothTip=1.0, attachMode="COUNT", toothCount=12,
+D = dict(gap=1.0, overlap=0.1, neckHeight=1.0, neckWidth=1.0, attachMode="COUNT", toothCount=12,
          toothSpacing=8.0, footReach=20.0, topWidth=3.0, thickness=1.2)
+NECK_EMBED = 0.5
 TOL = 1e-6
 
 
@@ -56,14 +57,14 @@ def trace(edge, h_limit, d, step=1.0):
     def edge_at(hq):
         s, guess = edge(hq), interp(H, S, hq)
         return guess if (s is None or abs(s - guess) > jump) else s
-    return dict(h=H, s=S, edgeAt=edge_at)
+    return dict(h=H, s=S, tipAt=edge_at)
 
 
 def tooth_centers(lo, hi, d):
-    bw = d["toothBase"]
+    nh = d["neckHeight"]
     if hi < lo:
         return []
-    mp = bw * 1.1
+    mp = max(2 * nh, nh + 0.5)
     if d["attachMode"] == "COUNT":
         n = min(d["toothCount"], math.floor((hi - lo) / mp) + 1)
         p = (hi - lo) / (n - 1) if n > 1 else 0
@@ -74,34 +75,29 @@ def tooth_centers(lo, hi, d):
     return [f + p * k for k in range(n)]
 
 
-def toothed_edge(tr, h_top, sign, d):
-    g, ov, bw = d["gap"], d["overlap"], d["toothBase"]
-    tw = min(d["toothTip"], bw)
-    teeth = tooth_centers(tr["h"][0] + bw / 2, h_top - bw / 2, d)
-    e = tr["edgeAt"]
+def contact_edge(tr, h_top, sign, d):
+    g, ov, nh = d["gap"], d["overlap"], d["neckHeight"]
     pts = [(tr["s"][0] - g * sign, 0.0)]
-    k = 0
     for h, s in zip(tr["h"], tr["s"]):
         if h > h_top:
             break
-        while k < len(teeth) and teeth[k] - bw / 2 <= h:
-            hk = teeth[k]
-            pts += [(e(hk - bw / 2) - g * sign, hk - bw / 2), (e(hk - tw / 2) + ov * sign, hk - tw / 2),
-                    (e(hk + tw / 2) + ov * sign, hk + tw / 2), (e(hk + bw / 2) - g * sign, hk + bw / 2)]
-            k += 1
-        if k > 0 and h <= teeth[k - 1] + bw / 2:
-            continue
         pts.append((s - g * sign, h))
     top_s = interp(tr["h"], tr["s"], h_top) - g * sign
     if abs(pts[-1][1] - h_top) > TOL:
         pts.append((top_s, h_top))
-    return dict(points=pts, teeth=len(teeth), bottomS=tr["s"][0] - g * sign, topS=top_s)
+    necks = []
+    for hk in tooth_centers(tr["h"][0] + nh / 2, h_top - nh / 2, d):
+        lo, hi = hk - nh / 2, hk + nh / 2
+        necks.append([(interp(tr["h"], tr["s"], lo) - (g + NECK_EMBED) * sign, lo),
+                      (tr["tipAt"](lo) + ov * sign, lo), (tr["tipAt"](hi) + ov * sign, hi),
+                      (interp(tr["h"], tr["s"], hi) - (g + NECK_EMBED) * sign, hi)])
+    return dict(points=pts, necks=necks, bottomS=tr["s"][0] - g * sign, topS=top_s)
 
 
 def single_profile(tr, d):
     g, tW = d["gap"], d["topWidth"]
     h_top = tr["h"][-1]
-    inner = toothed_edge(tr, h_top, 1, d)
+    inner = contact_edge(tr, h_top, 1, d)
     min_inner = min(s - g for s in tr["s"])
     foot = min(min_inner - d["footReach"], min_inner - tW)
     outer_top = inner["topS"] - tW
@@ -112,19 +108,20 @@ def single_profile(tr, d):
         h = tr["h"][j]
         pts.append((min(foot + (outer_top - foot) * (h / h_top), tr["s"][j] - g - tW), h))
     pts.append((foot, 0.0))
-    return dict(points=pts, teeth=inner["teeth"], height=h_top)
+    return dict(points=pts, necks=inner["necks"], teeth=len(inner["necks"]), height=h_top)
 
 
 def bridge_profile(trA, trB, d):
     h_top = min(trA["h"][-1], trB["h"][-1])
-    left = toothed_edge(trA, h_top, -1, d)
-    right = toothed_edge(trB, h_top, 1, d)
+    left = contact_edge(trA, h_top, -1, d)
+    right = contact_edge(trB, h_top, 1, d)
     for h, s in zip(trA["h"], trA["s"]):
         if h > h_top:
             break
         if interp(trB["h"], trB["s"], h) - s - 2 * d["gap"] < d["thickness"] / 2:
             return dict(error="too close")
-    return dict(points=left["points"] + right["points"][::-1], teeth=left["teeth"] + right["teeth"], height=h_top)
+    necks = left["necks"] + right["necks"]
+    return dict(points=left["points"] + right["points"][::-1], necks=necks, teeth=len(necks), height=h_top)
 
 
 # ---------------------------------------------------------------- test edges
@@ -171,11 +168,17 @@ def run():
             ok = False
             continue
         P = Polygon(pr["points"])
-        print(f"{name:30s} teeth={pr['teeth']:3d} height={pr['height']:6.1f} pts={len(pr['points']):4d} valid={P.is_valid}")
-        ok &= P.is_valid
+        necks = [Polygon(q) for q in pr["necks"]]
+        fused = all(q.is_valid and q.intersection(P).area > 0 for q in necks)
+        print(f"{name:30s} attach={pr['teeth']:3d} height={pr['height']:6.1f} wall valid={P.is_valid} "
+              f"attach points valid+fused={fused}")
+        ok &= P.is_valid and fused
         xs, ys = zip(*(pr["points"] + [pr["points"][0]]))
         a.fill(xs, ys, color="#4a7", alpha=.6)
         a.plot(xs, ys, "k", lw=.5)
+        for q in pr["necks"]:
+            qx, qy = zip(*(q + [q[0]]))
+            a.fill(qx, qy, color="#d62", lw=0)
         for e in (eA, eB):
             if e:
                 hh = [x / 4 for x in range(0, 600)]

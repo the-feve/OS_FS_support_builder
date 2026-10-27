@@ -20,9 +20,9 @@ and a part whose base sits above the bed.*
 | Max support height | Wall stops here or at the top of the part, whichever is lower |
 | Wall thickness | Default 1.2 mm (3 lines at 0.4 mm) |
 | Attach points by | **Count** (evenly spread) or **Spacing** (fixed pitch, centred) |
-| Gap to part | Clearance between the wall and the part between teeth, held across the whole wall thickness |
-| Tooth contact width / base width | Tip land touching the part (default 1 mm), and the tooth root width (2.5 mm) |
-| Contact overlap | How far tooth tips bury into the part so they fuse in the slicer (default 0.1 mm). Tips touch only at the nearest point across the wall, so each contact is about 1 mm × a fraction of the wall |
+| Gap to part (attach point length) | Clearance between the wall and the part. The attach points bridge it. Held across the whole wall thickness |
+| Attach point width / height | Size of each contact neck: across the wall × up (default **1 × 1 mm**). Separate from the wall thickness, so a thick wall for a tall support still breaks off cleanly |
+| Contact overlap | How far each attach point buries into the part so it fuses in the slicer (default 0.1 mm). Its tip reaches the nearest point across its width |
 | Foot reach on bed | How far the wall's foot extends away from the part |
 | Top width | Minimum wall width at the top, and the minimum width anywhere |
 | Add bed pad | Thin pad under the wall bottom for adhesion (width, thickness) |
@@ -32,7 +32,8 @@ and a part whose base sits above the bed.*
 
 1. Rays are cast across each support plane at ~1 mm height steps toward the part. The first hit at
    each height traces the part's edge in that plane, so any curve works.
-2. The edge is offset by the gap, and trapezoid teeth reach back across the gap to the part.
+2. The wall's edge is offset by the gap. Separate small attach points (necks, 1 × 1 mm by default)
+   bridge the gap from inside the wall to just into the part.
 3. The outer edge runs straight from the top to the foot, but never comes closer than *top width*
    to the inner edge.
 4. The 2D profile is sketched on the plane, extruded to wall thickness, and the bed pad is unioned on.
@@ -64,8 +65,8 @@ reach* and *Top width* only apply to the one-part mode.
 ## Status
 
 - **v1 runs in Onshape** (2026-10-27), including directly on an imported STL mesh.
-- **v2 (current file) not yet pasted:** trace through holes, gap across the full wall thickness,
-  two-part bridge, 1 mm contact defaults. Its profile math is checked in `tools/profile_check.py`.
+- **v3 (current file) not yet pasted:** trace through holes, gap across the full wall thickness,
+  two-part bridge, separate 1 × 1 mm attach-point necks. Its profile math is checked in `tools/profile_check.py`.
 
 ## Roadmap
 - **Drag handle for attach-point count/spacing.** Onshape's feature dialog has no slider widget

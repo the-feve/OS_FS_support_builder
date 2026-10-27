@@ -4,7 +4,9 @@ import(path : "onshape/std/geometry.fs", version : "3083.0");
 // Print Support Wall
 // Builds thin breakaway support walls for tall, thin 3D-printed parts. Each wall lies on a
 // user-picked plane, stands on the print bed plane, and touches the part through a row of
-// small teeth ("attach points") that follow the part's edge however it curves.
+// small attach points that follow the part's edge however it curves. The attach points are
+// separate small necks (default 1 x 1 mm), so the wall can be thickened for tall supports
+// while the contacts stay small and easy to break off.
 // Pick one part to brace it from one side, or two parts to build a wall bridging them.
 // Works on solids and on imported meshes (STL/OBJ/3MF).
 //
@@ -25,8 +27,7 @@ export enum AttachMode
 const WALL_BOUNDS      = { (millimeter) : [0.2, 1.2, 20] } as LengthBoundSpec;
 const GAP_BOUNDS       = { (millimeter) : [0, 1.0, 20] } as LengthBoundSpec;
 const OVERLAP_BOUNDS   = { (millimeter) : [0, 0.1, 2] } as LengthBoundSpec;
-const TIP_BOUNDS       = { (millimeter) : [0.1, 1.0, 10] } as LengthBoundSpec;
-const BASE_W_BOUNDS    = { (millimeter) : [0.2, 2.5, 50] } as LengthBoundSpec;
+const NECK_BOUNDS      = { (millimeter) : [0.2, 1.0, 20] } as LengthBoundSpec;
 const SPACING_BOUNDS   = { (millimeter) : [0.5, 8, 500] } as LengthBoundSpec;
 const HEIGHT_BOUNDS    = { (millimeter) : [1, 80, 2000] } as LengthBoundSpec;
 const FOOT_BOUNDS      = { (millimeter) : [0, 20, 1000] } as LengthBoundSpec;
@@ -39,6 +40,7 @@ const SAMPLE_STEP = 1 * millimeter;   // edge-trace resolution
 const MAX_SAMPLES = 300;              // cap on trace heights per side
 const MAX_TRACE_GAP = 8 * millimeter; // a longer run of misses ends the trace
 const OUTER_EVERY = 4;                // outer edge uses every Nth trace sample
+const NECK_EMBED = 0.5 * millimeter;  // how far each attach point reaches into the wall
 const TOL = 1e-6 * meter;
 
 annotation { "Feature Type Name" : "Print Support Wall",
@@ -83,14 +85,14 @@ export const printSupportWall = defineFeature(function(context is Context, id is
             isLength(definition.toothSpacing, SPACING_BOUNDS);
         }
 
-        annotation { "Name" : "Gap to part" }
+        annotation { "Name" : "Gap to part (attach point length)" }
         isLength(definition.gap, GAP_BOUNDS);
 
-        annotation { "Name" : "Tooth contact width" }
-        isLength(definition.toothTip, TIP_BOUNDS);
+        annotation { "Name" : "Attach point width (across wall)" }
+        isLength(definition.neckWidth, NECK_BOUNDS);
 
-        annotation { "Name" : "Tooth base width" }
-        isLength(definition.toothBase, BASE_W_BOUNDS);
+        annotation { "Name" : "Attach point height" }
+        isLength(definition.neckHeight, NECK_BOUNDS);
 
         annotation { "Name" : "Contact overlap" }
         isLength(definition.overlap, OVERLAP_BOUNDS);
@@ -232,12 +234,13 @@ function buildOneWall(context is Context, wallId is Id, planeQuery is Query, up 
     var jumpTol = max(1.5 * millimeter, 2 * definition.gap);
 
     // Edge position (s) of a body at height h, from rays cast along d * sign starting at s = start.
-    // Rays run at the wall's centre and both faces; returns the hit closest to the wall.
-    var castAt = function(body, sign, start, h)
+    // Rays run at the centre and at +/- half (the wall's or attach point's faces); returns the hit
+    // closest to the wall.
+    var castAt = function(body, sign, start, h, half)
         {
             var faces = qOwnedByBody(body, EntityType.FACE);
             var best = undefined;
-            for (var off in [-t / 2, 0 * meter, t / 2])
+            for (var off in [-half, 0 * meter, half])
             {
                 var origin = at(start, h) + n * off;
                 for (var target in [faces, body])
@@ -267,7 +270,7 @@ function buildOneWall(context is Context, wallId is Id, planeQuery is Query, up 
             var rawS = [];
             for (var h = step / 2; h <= hLimit; h += step)
             {
-                var s = castAt(body, sign, start, h);
+                var s = castAt(body, sign, start, h, t / 2);
                 if (s != undefined)
                 {
                     rawH = append(rawH, h);
@@ -283,9 +286,10 @@ function buildOneWall(context is Context, wallId is Id, planeQuery is Query, up 
                 throw regenError("Support plane doesn't cross the part below the max support height.",
                     ["supportPlanes"], planeQuery);
             }
-            tr.edgeAt = function(hq)
+            // part edge as seen across the attach point's width (its tip touches only there)
+            tr.tipAt = function(hq)
                 {
-                    var s = castAt(body, sign, start, hq);
+                    var s = castAt(body, sign, start, hq, definition.neckWidth / 2);
                     var guess = interp(tr.h, tr.s, hq);
                     return (s == undefined || abs(s - guess) > jumpTol) ? guess : s;
                 };
@@ -342,6 +346,35 @@ function buildOneWall(context is Context, wallId is Id, planeQuery is Query, up 
     }
 
     var sketchBodies = [qCreatedBy(wallId + "sketch", EntityType.BODY)];
+    var solids = [qCreatedBy(wallId + "extrude", EntityType.BODY)];
+
+    if (size(res.necks) > 0)
+    {
+        // Attach points: small blocks neckWidth across, centred on the wall, from inside the wall
+        // to just into the part. Independent of the wall thickness.
+        var nw = definition.neckWidth;
+        var nkPlane = plane(O - n * (nw / 2), n, d);
+        var nkSketch = newSketchOnPlane(context, wallId + "neckSketch", { "sketchPlane" : nkPlane });
+        for (var k = 0; k < size(res.necks); k += 1)
+        {
+            var q = [];
+            for (var p in res.necks[k])
+            {
+                var wp = at(p[0], p[1]);
+                q = append(q, vector(dot(wp - nkPlane.origin, d), dot(wp - nkPlane.origin, yAx)));
+            }
+            skPolyline(nkSketch, "neck" ~ k, { "points" : closeLoop(dedupe(q)) });
+        }
+        skSolve(nkSketch);
+        opExtrude(context, wallId + "necks", {
+                "entities" : qSketchRegion(wallId + "neckSketch"),
+                "direction" : n,
+                "endBound" : BoundingType.BLIND,
+                "endDepth" : nw
+            });
+        sketchBodies = append(sketchBodies, qCreatedBy(wallId + "neckSketch", EntityType.BODY));
+        solids = append(solids, qCreatedBy(wallId + "necks", EntityType.BODY));
+    }
 
     if (definition.addPad)
     {
@@ -363,12 +396,16 @@ function buildOneWall(context is Context, wallId is Id, planeQuery is Query, up 
                 "endBound" : BoundingType.BLIND,
                 "endDepth" : definition.padThickness
             });
+        sketchBodies = append(sketchBodies, qCreatedBy(wallId + "padSketch", EntityType.BODY));
+        solids = append(solids, qCreatedBy(wallId + "pad", EntityType.BODY));
+    }
+
+    if (size(solids) > 1)
+    {
         opBoolean(context, wallId + "union", {
-                "tools" : qUnion([qCreatedBy(wallId + "extrude", EntityType.BODY),
-                            qCreatedBy(wallId + "pad", EntityType.BODY)]),
+                "tools" : qUnion(solids),
                 "operationType" : BooleanOperationType.UNION
             });
-        sketchBodies = append(sketchBodies, qCreatedBy(wallId + "padSketch", EntityType.BODY));
     }
 
     opDeleteBodies(context, wallId + "deleteSketches", { "entities" : qUnion(sketchBodies) });
@@ -457,14 +494,14 @@ function interp(hs is array, ss is array, h)
     return ss[size(ss) - 1];
 }
 
-// Tooth centre heights between lo and hi.
+// Attach point centre heights between lo and hi.
 function toothCenters(lo, hi, definition is map) returns array
 {
-    var bw = definition.toothBase;
+    var nh = definition.neckHeight;
     var teeth = [];
     if (hi < lo)
         return teeth;
-    var minPitch = bw * 1.1;
+    var minPitch = max(2 * nh, nh + 0.5 * millimeter);
     var n = 0;
     var pitch = 0 * meter;
     if (definition.attachMode == AttachMode.COUNT)
@@ -483,42 +520,38 @@ function toothCenters(lo, hi, definition is map) returns array
     return teeth;
 }
 
-// Wall edge facing one part, bottom to top up to hTop, with teeth spliced in.
+// Wall edge facing one part, bottom to top up to hTop, plus the attach points along it.
 // sign = +1 when the part is at higher s than the wall, -1 when lower.
-// The wall edge sits gap away from the part; tooth tips reach overlap into it.
-function toothedEdge(tr is map, hTop, sign is number, definition is map) returns map
+// The wall edge sits gap away from the part. Each attach point is a quad (in s, h) from
+// NECK_EMBED inside the wall to overlap into the part, neckHeight tall.
+function contactEdge(tr is map, hTop, sign is number, definition is map) returns map
 {
     var g = definition.gap;
     var ov = definition.overlap;
-    var bw = definition.toothBase;
-    var tw = min(definition.toothTip, bw);
-    var teeth = toothCenters(tr.h[0] + bw / 2, hTop - bw / 2, definition);
-    var edge = tr.edgeAt;
+    var nh = definition.neckHeight;
     var pts = [vector(tr.s[0] - g * sign, 0 * meter)];
-    var k = 0;
     for (var j = 0; j < size(tr.h); j += 1)
     {
-        var h = tr.h[j];
-        if (h > hTop)
+        if (tr.h[j] > hTop)
             break;
-        while (k < size(teeth) && teeth[k] - bw / 2 <= h)
-        {
-            var hk = teeth[k];
-            pts = concatenateArrays([pts, [
-                        vector(edge(hk - bw / 2) - g * sign, hk - bw / 2),
-                        vector(edge(hk - tw / 2) + ov * sign, hk - tw / 2),
-                        vector(edge(hk + tw / 2) + ov * sign, hk + tw / 2),
-                        vector(edge(hk + bw / 2) - g * sign, hk + bw / 2)]]);
-            k += 1;
-        }
-        if (k > 0 && h <= teeth[k - 1] + bw / 2)
-            continue; // this sample sits inside a tooth
-        pts = append(pts, vector(tr.s[j] - g * sign, h));
+        pts = append(pts, vector(tr.s[j] - g * sign, tr.h[j]));
     }
     var topS = interp(tr.h, tr.s, hTop) - g * sign;
     if (abs(pts[size(pts) - 1][1] - hTop) > TOL)
         pts = append(pts, vector(topS, hTop));
-    return { "points" : pts, "teeth" : size(teeth), "bottomS" : tr.s[0] - g * sign, "topS" : topS };
+
+    var necks = [];
+    for (var hk in toothCenters(tr.h[0] + nh / 2, hTop - nh / 2, definition))
+    {
+        var lo = hk - nh / 2;
+        var hi = hk + nh / 2;
+        necks = append(necks, [
+                    vector(interp(tr.h, tr.s, lo) - (g + NECK_EMBED) * sign, lo),
+                    vector(tr.tipAt(lo) + ov * sign, lo),
+                    vector(tr.tipAt(hi) + ov * sign, hi),
+                    vector(interp(tr.h, tr.s, hi) - (g + NECK_EMBED) * sign, hi)]);
+    }
+    return { "points" : pts, "necks" : necks, "bottomS" : tr.s[0] - g * sign, "topS" : topS };
 }
 
 // One part: wall on the low-s side, toothed edge toward the part, straight outer edge to a foot.
@@ -526,7 +559,7 @@ function singleProfile(tr is map, definition is map) returns map
 {
     var g = definition.gap;
     var hTop = tr.h[size(tr.h) - 1];
-    var inner = toothedEdge(tr, hTop, 1, definition);
+    var inner = contactEdge(tr, hTop, 1, definition);
     var tW = definition.topWidth;
     var minInner = tr.s[0] - g;
     for (var s in tr.s)
@@ -543,7 +576,7 @@ function singleProfile(tr is map, definition is map) returns map
         pts = append(pts, vector(min(slope, tr.s[j] - g - tW), h));
     }
     pts = append(pts, vector(footS, 0 * meter));
-    return { "points" : pts, "teeth" : inner.teeth, "height" : hTop,
+    return { "points" : pts, "necks" : inner.necks, "teeth" : size(inner.necks), "height" : hTop,
             "padFrom" : footS, "padTo" : inner.bottomS };
 }
 
@@ -551,8 +584,8 @@ function singleProfile(tr is map, definition is map) returns map
 function bridgeProfile(trA is map, trB is map, definition is map) returns map
 {
     var hTop = min(trA.h[size(trA.h) - 1], trB.h[size(trB.h) - 1]);
-    var left = toothedEdge(trA, hTop, -1, definition);
-    var right = toothedEdge(trB, hTop, 1, definition);
+    var left = contactEdge(trA, hTop, -1, definition);
+    var right = contactEdge(trB, hTop, 1, definition);
     // the parts must leave room for a wall between them at every height
     for (var j = 0; j < size(trA.h); j += 1)
     {
@@ -565,7 +598,8 @@ function bridgeProfile(trA is map, trB is map, definition is map) returns map
     var pts = left.points;
     for (var k = size(right.points) - 1; k >= 0; k -= 1)
         pts = append(pts, right.points[k]);
-    return { "points" : pts, "teeth" : left.teeth + right.teeth, "height" : hTop,
+    var necks = concatenateArrays([left.necks, right.necks]);
+    return { "points" : pts, "necks" : necks, "teeth" : size(necks), "height" : hTop,
             "padFrom" : left.bottomS, "padTo" : right.bottomS };
 }
 
