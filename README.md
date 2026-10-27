@@ -63,14 +63,9 @@ reach* and *Top width* only apply to the one-part mode.
 
 ## Status
 
-**Written, not yet compiled.** The 2D profile math is checked in Python (`tools/profile_check.py`);
-the Onshape API calls (`evRaycast`, `skPolyline`, `skRectangle`) are from memory and need a
-first paste to confirm. See *Known unknowns* below.
-
-### Known unknowns for the first paste
-- `evRaycast` field names (`"closest"`, result `.intersection`).
-- `skPolyline` closing the loop when the first and last points match.
-- Whether `try silent(...)` as an expression is accepted around `evRaycast`.
+- **v1 runs in Onshape** (2026-10-27), including directly on an imported STL mesh.
+- **v2 (current file) not yet pasted:** trace through holes, gap across the full wall thickness,
+  two-part bridge, 1 mm contact defaults. Its profile math is checked in `tools/profile_check.py`.
 
 ## Roadmap
 - **Drag handle for attach-point count/spacing.** Onshape's feature dialog has no slider widget
