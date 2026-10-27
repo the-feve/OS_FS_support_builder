@@ -21,7 +21,7 @@ and a part whose base sits above the bed.*
 | Wall thickness | Default 1.2 mm (3 lines at 0.4 mm) |
 | Attach points by | **Count** (evenly spread) or **Spacing** (fixed pitch, centred) |
 | Gap to part (attach point length) | Clearance between the wall and the part. The attach points bridge it. Held across the whole wall thickness |
-| Attach point width / height | Size of each contact neck: across the wall × up (default **1 × 1 mm**). Separate from the wall thickness, so a thick wall for a tall support still breaks off cleanly |
+| Attach point width / height | Size of each contact neck at the part: across the wall × up (default **1 × 1 mm**). Separate from the wall thickness, so a thick wall for a tall support still breaks off cleanly. Each neck has a flat top and a 45° underside, so it prints without support |
 | Contact overlap | How far each attach point buries into the part so it fuses in the slicer (default 0.1 mm). Its tip reaches the nearest point across its width |
 | Foot reach on bed | How far the wall's foot extends away from the part |
 | Top width | Minimum wall width at the top, and the minimum width anywhere |
@@ -32,8 +32,9 @@ and a part whose base sits above the bed.*
 
 1. Rays are cast across each support plane at ~1 mm height steps toward the part. The first hit at
    each height traces the part's edge in that plane, so any curve works.
-2. The wall's edge is offset by the gap. Separate small attach points (necks, 1 × 1 mm by default)
-   bridge the gap from inside the wall to just into the part.
+2. The wall's edge is offset by the gap. Separate small attach points (necks, 1 × 1 mm contact by
+   default) bridge the gap from inside the wall to just into the part, with a 45° underside (no
+   overhangs).
 3. The outer edge runs straight from the top to the foot, but never comes closer than *top width*
    to the inner edge.
 4. The 2D profile is sketched on the plane, extruded to wall thickness, and the bed pad is unioned on.

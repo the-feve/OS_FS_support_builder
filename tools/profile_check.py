@@ -64,7 +64,7 @@ def tooth_centers(lo, hi, d):
     nh = d["neckHeight"]
     if hi < lo:
         return []
-    mp = max(2 * nh, nh + 0.5)
+    mp = nh + d["gap"] + NECK_EMBED + d["overlap"] + 0.5
     if d["attachMode"] == "COUNT":
         n = min(d["toothCount"], math.floor((hi - lo) / mp) + 1)
         p = (hi - lo) / (n - 1) if n > 1 else 0
@@ -85,11 +85,22 @@ def contact_edge(tr, h_top, sign, d):
     top_s = interp(tr["h"], tr["s"], h_top) - g * sign
     if abs(pts[-1][1] - h_top) > TOL:
         pts.append((top_s, h_top))
+    reach = g + NECK_EMBED + ov
     necks = []
-    for hk in tooth_centers(tr["h"][0] + nh / 2, h_top - nh / 2, d):
+    for hk in tooth_centers(tr["h"][0] + nh / 2 + 2.5 * reach, h_top - nh / 2, d):
         lo, hi = hk - nh / 2, hk + nh / 2
-        necks.append([(interp(tr["h"], tr["s"], lo) - (g + NECK_EMBED) * sign, lo),
-                      (tr["tipAt"](lo) + ov * sign, lo), (tr["tipAt"](hi) + ov * sign, hi),
+        tip_lo = tr["tipAt"](lo) + ov * sign
+        d_lo, d_hi = 0.0, 4 * reach + nh
+        for _ in range(24):
+            dm = (d_lo + d_hi) / 2
+            run = abs(tip_lo - (interp(tr["h"], tr["s"], lo - dm) - (g + NECK_EMBED) * sign))
+            if dm >= 1.02 * run:
+                d_hi = dm
+            else:
+                d_lo = dm
+        bottom = max(lo - d_hi, 0.0)
+        necks.append([(interp(tr["h"], tr["s"], bottom) - (g + NECK_EMBED) * sign, bottom),
+                      (tip_lo, lo), (tr["tipAt"](hi) + ov * sign, hi),
                       (interp(tr["h"], tr["s"], hi) - (g + NECK_EMBED) * sign, hi)])
     return dict(points=pts, necks=necks, bottomS=tr["s"][0] - g * sign, topS=top_s)
 
@@ -170,8 +181,11 @@ def run():
         P = Polygon(pr["points"])
         necks = [Polygon(q) for q in pr["necks"]]
         fused = all(q.is_valid and q.intersection(P).area > 0 for q in necks)
+        # underside = first edge (base bottom -> tip bottom): rise must be >= run (45 deg)
+        no_overhang = all(abs(q[1][1] - q[0][1]) >= abs(q[1][0] - q[0][0]) - 0.05 for q in pr["necks"])
+        fused = fused and no_overhang
         print(f"{name:30s} attach={pr['teeth']:3d} height={pr['height']:6.1f} wall valid={P.is_valid} "
-              f"attach points valid+fused={fused}")
+              f"attach points valid+fused+45deg={fused}")
         ok &= P.is_valid and fused
         xs, ys = zip(*(pr["points"] + [pr["points"][0]]))
         a.fill(xs, ys, color="#4a7", alpha=.6)

@@ -501,7 +501,8 @@ function toothCenters(lo, hi, definition is map) returns array
     var teeth = [];
     if (hi < lo)
         return teeth;
-    var minPitch = max(2 * nh, nh + 0.5 * millimeter);
+    // each attach point spans its height plus the 45-degree underside (about one reach)
+    var minPitch = nh + definition.gap + NECK_EMBED + definition.overlap + 0.5 * millimeter;
     var n = 0;
     var pitch = 0 * meter;
     if (definition.attachMode == AttachMode.COUNT)
@@ -523,7 +524,8 @@ function toothCenters(lo, hi, definition is map) returns array
 // Wall edge facing one part, bottom to top up to hTop, plus the attach points along it.
 // sign = +1 when the part is at higher s than the wall, -1 when lower.
 // The wall edge sits gap away from the part. Each attach point is a quad (in s, h) from
-// NECK_EMBED inside the wall to overlap into the part, neckHeight tall.
+// NECK_EMBED inside the wall to overlap into the part: neckHeight tall at the tip, flat on top,
+// with a 45-degree underside (no overhang).
 function contactEdge(tr is map, hTop, sign is number, definition is map) returns map
 {
     var g = definition.gap;
@@ -540,14 +542,31 @@ function contactEdge(tr is map, hTop, sign is number, definition is map) returns
     if (abs(pts[size(pts) - 1][1] - hTop) > TOL)
         pts = append(pts, vector(topS, hTop));
 
+    // Each attach point: flat top, contact face neckHeight tall at the tip, and an underside that
+    // rises at 45 degrees from the wall to the tip so it prints without support.
+    var reach = g + NECK_EMBED + ov;
     var necks = [];
-    for (var hk in toothCenters(tr.h[0] + nh / 2, hTop - nh / 2, definition))
+    for (var hk in toothCenters(tr.h[0] + nh / 2 + 2.5 * reach, hTop - nh / 2, definition))
     {
         var lo = hk - nh / 2;
         var hi = hk + nh / 2;
+        var tipLo = tr.tipAt(lo) + ov * sign;
+        // the wall edge may slant, so search for the smallest drop where the underside is >= 45 degrees
+        var dLo = 0 * meter;
+        var dHi = 4 * reach + nh;
+        for (var it = 0; it < 24; it += 1)
+        {
+            var dm = (dLo + dHi) / 2;
+            var run = abs(tipLo - (interp(tr.h, tr.s, lo - dm) - (g + NECK_EMBED) * sign));
+            if (dm >= 1.02 * run)
+                dHi = dm;
+            else
+                dLo = dm;
+        }
+        var bottom = max(lo - dHi, 0 * meter);
         necks = append(necks, [
-                    vector(interp(tr.h, tr.s, lo) - (g + NECK_EMBED) * sign, lo),
-                    vector(tr.tipAt(lo) + ov * sign, lo),
+                    vector(interp(tr.h, tr.s, bottom) - (g + NECK_EMBED) * sign, bottom),
+                    vector(tipLo, lo),
                     vector(tr.tipAt(hi) + ov * sign, hi),
                     vector(interp(tr.h, tr.s, hi) - (g + NECK_EMBED) * sign, hi)]);
     }
