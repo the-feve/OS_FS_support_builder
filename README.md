@@ -13,16 +13,16 @@ and a part whose base sits above the bed.*
 
 | Input | What it does |
 | --- | --- |
-| Part to support | The solid to brace |
+| Parts to support | One part to brace it, or two to bridge them. Solids or imported meshes |
 | Support planes | One wall per plane (multi-select). The wall is centred on the plane |
 | Flip support side | Which side of the part the wall stands on |
 | Print bed plane | The build plate. "Up" is taken as the side the part is on |
 | Max support height | Wall stops here or at the top of the part, whichever is lower |
 | Wall thickness | Default 1.2 mm (3 lines at 0.4 mm) |
 | Attach points by | **Count** (evenly spread) or **Spacing** (fixed pitch, centred) |
-| Gap to part | Horizontal clearance between the wall and the part between teeth |
-| Tooth contact width / base width | Tip land touching the part, and the tooth root width |
-| Contact overlap | How far tooth tips bury into the part so they fuse in the slicer (default 0.15 mm) |
+| Gap to part | Clearance between the wall and the part between teeth, held across the whole wall thickness |
+| Tooth contact width / base width | Tip land touching the part (default 1 mm), and the tooth root width (2.5 mm) |
+| Contact overlap | How far tooth tips bury into the part so they fuse in the slicer (default 0.1 mm). Tips touch only at the nearest point across the wall, so each contact is about 1 mm × a fraction of the wall |
 | Foot reach on bed | How far the wall's foot extends away from the part |
 | Top width | Minimum wall width at the top, and the minimum width anywhere |
 | Add bed pad | Thin pad under the wall bottom for adhesion (width, thickness) |
@@ -42,13 +42,16 @@ lowest point of contact.
 
 ## Supporting an STL part
 
-**Try it directly first.** *Part to support* now accepts imported mesh bodies (STL/OBJ/3MF), via
-the `AllowMeshGeometry.YES` filter. Untested: whether Onshape's ray-cast works on meshes. If it
-doesn't, the feature says so ("Rays didn't hit the mesh part…").
+Select the imported mesh directly. *Part to support* accepts mesh bodies (STL/OBJ/3MF), and
+ray-casting works on them (confirmed 2026-10-27 on `eye_mesh.stl`). Perforated parts are fine:
+rays that slip through holes are filtered out.
 
-**Fallback:** convert the STL with [mesh2step](https://github.com/the-feve/mesh2step) and import
-the STEP. Faceted output is fine; the feature doesn't care about facets. When printing, export
-the support walls and use your original STL for the part.
+## Bridging two parts
+
+Pick **two parts** to build one wall between them, with teeth on both sides and one shared foot.
+The wall is as tall as the lower of the two traces (capped by *Max support height*). If the parts
+are too close across the plane to fit a wall, the feature says so. *Flip support side*, *Foot
+reach* and *Top width* only apply to the one-part mode.
 
 ## Install (paste flow)
 
