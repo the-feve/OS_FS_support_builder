@@ -43,7 +43,9 @@ annotation { "Feature Type Name" : "Print Support Wall",
 export const printSupportWall = defineFeature(function(context is Context, id is Id, definition is map)
     precondition
     {
-        annotation { "Name" : "Part to support", "Filter" : EntityType.BODY && BodyType.SOLID, "MaxNumberOfPicks" : 1 }
+        annotation { "Name" : "Part to support (solid or imported mesh)",
+                     "Filter" : EntityType.BODY && (BodyType.SOLID || BodyType.SHEET) && AllowMeshGeometry.YES,
+                     "MaxNumberOfPicks" : 1 }
         definition.part is Query;
 
         annotation { "Name" : "Support planes", "Filter" : GeometryType.PLANE }
@@ -229,14 +231,18 @@ function buildOneWall(context is Context, wallId is Id, planeQuery is Query, up 
     // Edge position (s) of the part at height h, or undefined if the ray misses.
     var castAt = function(h)
         {
-            var hits = try silent(evRaycast(context, {
-                        "entities" : faces,
-                        "ray" : line(at(rayStart, h), d),
-                        "closest" : true
-                    }));
-            if (hits == undefined || size(hits) == 0)
-                return undefined;
-            return dot(hits[0].intersection - O, d);
+            // Try the part's faces first, then the body itself (mesh bodies may only answer to one).
+            for (var target in [faces, definition.part])
+            {
+                var hits = try silent(evRaycast(context, {
+                            "entities" : target,
+                            "ray" : line(at(rayStart, h), d),
+                            "closest" : true
+                        }));
+                if (hits != undefined && size(hits) > 0)
+                    return dot(hits[0].intersection - O, d);
+            }
+            return undefined;
         };
 
     // Trace the edge from the bed up to the height limit; stop at the first miss after the first hit.
@@ -257,8 +263,13 @@ function buildOneWall(context is Context, wallId is Id, planeQuery is Query, up 
         sampleS = append(sampleS, s);
     }
     if (size(sampleH) < 2)
+    {
+        if (size(evaluateQuery(context, qMeshGeometryFilter(definition.part, MeshGeometry.YES))) > 0)
+            throw regenError("Rays didn't hit the mesh part. Onshape may not support ray-casting on mesh " ~
+                "bodies; convert the STL with mesh2step and select the converted part.", ["part"]);
         throw regenError("Support plane doesn't cross the part below the max support height.",
             ["supportPlanes"], planeQuery);
+    }
 
     var last = size(sampleH) - 1;
     var hStart = sampleH[0];

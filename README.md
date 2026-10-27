@@ -42,11 +42,13 @@ lowest point of contact.
 
 ## Supporting an STL part
 
-Onshape imports STL as a mesh, and the feature's *Part to support* box only accepts solids. Convert
-it first with [mesh2step](https://github.com/the-feve/mesh2step), then import the STEP. Both its
-faceted and smooth outputs are real solids. The feature traces the part's edge by ray-casting,
-so facets don't get in the way; smooth mode just gives a lighter, cleaner part. When printing,
-export the support walls and use your original STL for the part itself.
+**Try it directly first.** *Part to support* now accepts imported mesh bodies (STL/OBJ/3MF), via
+the `AllowMeshGeometry.YES` filter. Untested: whether Onshape's ray-cast works on meshes. If it
+doesn't, the feature says so ("Rays didn't hit the mesh part…").
+
+**Fallback:** convert the STL with [mesh2step](https://github.com/the-feve/mesh2step) and import
+the STEP. Faceted output is fine; the feature doesn't care about facets. When printing, export
+the support walls and use your original STL for the part.
 
 ## Install (paste flow)
 
